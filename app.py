@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import pickle
+import numpy as np
 
 st.set_page_config(page_title="IPL Analytics Dashboard", layout="wide")
 st.title("🏏 IPL Cricket Performance Analytics")
@@ -16,7 +18,8 @@ def load_and_clean_data():
         'Delhi Daredevils': 'Delhi Capitals',
         'Kings XI Punjab': 'Punjab Kings',
         'Deccan Chargers': 'Sunrisers Hyderabad',
-        'Royal Challengers Bangalore': 'Royal Challengers Bengaluru'
+        'Royal Challengers Bangalore': 'Royal Challengers Bengaluru',
+        'Rising Pune Supergiant': 'Rising Pune Supergiants' # Fixing the exact typo
     }
     match_df['team1'] = match_df['team1'].replace(team_mapping)
     match_df['team2'] = match_df['team2'].replace(team_mapping)
@@ -88,3 +91,61 @@ else:
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("These two teams have never played against each other in the dataset.")
+
+    st.markdown("---")
+st.header("🔮 Live Match Win Predictor")
+
+# 1. Load the trained machine learning model
+try:
+    pipe = pickle.load(open('model.pkl', 'rb'))
+except FileNotFoundError:
+    st.error("Model file not found! Please ensure 'model.pkl' is in the same folder.")
+    st.stop()
+
+# 2. Create Layout for Team and Venue Selection
+col1, col2, col3 = st.columns(3)
+with col1:
+    batting_team = st.selectbox("Batting Team (Chasing)", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0)
+with col2:
+    bowling_team = st.selectbox("Bowling Team (Defending)", teams, index=teams.index('Mumbai Indians') if 'Mumbai Indians' in teams else 1)
+with col3:
+    selected_stadium = st.selectbox("Venue", stadiums)
+
+# 3. Create Layout for Live Match Situation Inputs
+col4, col5, col6, col7 = st.columns(4)
+with col4:
+    target = st.number_input("Target Score", min_value=0, max_value=300, value=180)
+with col5:
+    score = st.number_input("Current Score", min_value=0, max_value=target, value=120)
+with col6:
+    overs = st.number_input("Overs Completed", min_value=0.0, max_value=20.0, value=15.0, step=0.1)
+with col7:
+    wickets = st.number_input("Wickets Fallen", min_value=0, max_value=10, value=4)
+
+# 4. Prediction Logic
+if st.button("Predict Win Probability"):
+    if batting_team == bowling_team:
+        st.error("Batting and Bowling teams must be different!")
+    else:
+        # Calculate derived metrics from the user's input
+        runs_left = target - score
+        balls_left = 120 - int(overs * 6)
+        wickets_left = 10 - wickets
+        crr = (score * 6) / (int(overs * 6)) if overs > 0 else 0
+        rrr = (runs_left * 6) / balls_left if balls_left > 0 else 0
+        
+        # Format input exactly as the model expects it
+        input_df = pd.DataFrame({
+            'batting_team': [batting_team], 'bowling_team': [bowling_team], 'venue': [selected_stadium], 
+            'runs_left': [runs_left], 'balls_left': [balls_left], 'wickets_left': [wickets_left], 
+            'target': [target], 'crr': [crr], 'rrr': [rrr]
+        })
+        
+        # Get prediction probabilities
+        result = pipe.predict_proba(input_df)
+        loss_prob = result[0][0]
+        win_prob = result[0][1]
+        
+        # Display Results
+        st.markdown(f"### 🟢 **{batting_team}**: {round(win_prob * 100)}%")
+        st.markdown(f"### 🔴 **{bowling_team}**: {round(loss_prob * 100)}%")
