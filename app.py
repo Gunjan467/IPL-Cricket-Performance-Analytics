@@ -1,12 +1,15 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import pickle
 import numpy as np
 
 st.set_page_config(page_title="IPL Analytics Dashboard", layout="wide")
 st.title("🏏 IPL Cricket Performance Analytics")
 st.write("Welcome to the interactive IPL match analysis dashboard.")
+
+THEME_COLORS = ['#38BDF8', '#818CF8', '#34D399', '#FBBF24'] 
 
 @st.cache_data
 def load_and_clean_data():
@@ -19,27 +22,29 @@ def load_and_clean_data():
         'Kings XI Punjab': 'Punjab Kings',
         'Deccan Chargers': 'Sunrisers Hyderabad',
         'Royal Challengers Bangalore': 'Royal Challengers Bengaluru',
-        'Rising Pune Supergiant': 'Rising Pune Supergiants' # Fixing the exact typo
+        'Rising Pune Supergiant': 'Rising Pune Supergiants'
     }
     match_df['team1'] = match_df['team1'].replace(team_mapping)
     match_df['team2'] = match_df['team2'].replace(team_mapping)
+    match_df['winner'] = match_df['winner'].replace(team_mapping)
     
     return match_df
 
 match_df = load_and_clean_data()
+teams = sorted(match_df['team1'].dropna().unique())
+stadiums = sorted(match_df['venue'].dropna().unique())
 
 st.header("🏟️ Venue Analysis")
 
-stadiums = sorted(match_df['venue'].dropna().unique())
-selected_venue = st.selectbox("Select a Stadium to Analyze", stadiums, index=stadiums.index('Wankhede Stadium'))
+selected_venue = st.selectbox("Select a Stadium to Analyze", stadiums, index=stadiums.index('Wankhede Stadium') if 'Wankhede Stadium' in stadiums else 0)
 
 venue_df = match_df[match_df['venue'] == selected_venue]
 st.write(f"**Total Matches Played at {selected_venue}:** {len(venue_df)}")
 
-batting_first_wins = len(venue_df[venue_df['result'] == 'runs'])
-chasing_wins = len(venue_df[venue_df['result'] == 'wickets'])
-
 if len(venue_df) > 0:
+    batting_first_wins = len(venue_df[venue_df['result'] == 'runs'])
+    chasing_wins = len(venue_df[venue_df['result'] == 'wickets'])
+    
     chart_data = pd.DataFrame({
         'Outcome': ['Batting First', 'Chasing'],
         'Wins': [batting_first_wins, chasing_wins]
@@ -47,20 +52,23 @@ if len(venue_df) > 0:
     
     fig = px.pie(chart_data, values='Wins', names='Outcome', 
                  color='Outcome',
-                 color_discrete_map={'Batting First':'#1f77b4', 'Chasing':'#ff7f0e'})
+                 color_discrete_map={'Batting First':'#38BDF8', 'Chasing':'#818CF8'},
+                 hole=0.4) 
     
+    fig.update_traces(textposition='inside', textinfo='percent+label', 
+                      textfont_size=16, textfont_color='white',
+                      marker=dict(line=dict(color='#111827', width=2)))
+                      
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15}, showlegend=False)
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.warning("Not enough data to calculate win ratios for this venue.")
+
 st.markdown("---") 
 st.header("⚔️ Head-to-Head Matchup")
 
-# Create two columns for the team selection dropdowns
 col1, col2 = st.columns(2)
-teams = sorted(match_df['team1'].dropna().unique())
-
 with col1:
-    # Safely handle default index just in case the team isn't in the list
     default_idx1 = teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0
     team1 = st.selectbox("Select Team 1", teams, index=default_idx1)
     
@@ -71,81 +79,114 @@ with col2:
 if team1 == team2:
     st.warning("⚠️ Please select two different teams!")
 else:
-    # Filter the data for only matches between these two teams
     mask = ((match_df['team1'] == team1) & (match_df['team2'] == team2)) | ((match_df['team1'] == team2) & (match_df['team2'] == team1))
     h2h_df = match_df[mask]
     
     st.write(f"**Total Matches Played between {team1} and {team2}:** {len(h2h_df)}")
     
-    # Only draw the chart if they have played against each other
     if len(h2h_df) > 0:
-        # Count the wins for each team
         wins = h2h_df['winner'].value_counts().reset_index()
         wins.columns = ['Team', 'Wins']
         
-        # Create a Plotly Bar Chart
-        fig2 = px.bar(wins, x='Team', y='Wins', color='Team', 
+        fig2 = px.bar(wins, x='Team', y='Wins', 
+                      color='Team', 
                       title=f"Historic Win Record: {team1} vs {team2}",
-                      text='Wins')
+                      text='Wins',
+                      color_discrete_sequence=['#8B5CF6', '#D97706'])
+        
+        fig2.update_traces(textfont_size=22, textfont_color='white')              
+        fig2.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15})
+        
+        fig2.update_xaxes(showgrid=False, tickfont=dict(size=18))
+        fig2.update_yaxes(showgrid=True, gridcolor='#334155')
         
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("These two teams have never played against each other in the dataset.")
 
-    st.markdown("---")
+st.markdown("---")
 st.header("🔮 Live Match Win Predictor")
 
-# 1. Load the trained machine learning model
 try:
     pipe = pickle.load(open('model.pkl', 'rb'))
 except FileNotFoundError:
     st.error("Model file not found! Please ensure 'model.pkl' is in the same folder.")
     st.stop()
 
-# 2. Create Layout for Team and Venue Selection
-col1, col2, col3 = st.columns(3)
-with col1:
-    batting_team = st.selectbox("Batting Team (Chasing)", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0)
-with col2:
-    bowling_team = st.selectbox("Bowling Team (Defending)", teams, index=teams.index('Mumbai Indians') if 'Mumbai Indians' in teams else 1)
+col3, col4, col5 = st.columns(3)
 with col3:
-    selected_stadium = st.selectbox("Venue", stadiums)
-
-# 3. Create Layout for Live Match Situation Inputs
-col4, col5, col6, col7 = st.columns(4)
+    batting_team = st.selectbox("Batting Team (Chasing)", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0)
 with col4:
-    target = st.number_input("Target Score", min_value=0, max_value=300, value=180)
+    bowling_team = st.selectbox("Bowling Team (Defending)", teams, index=teams.index('Mumbai Indians') if 'Mumbai Indians' in teams else 1)
 with col5:
-    score = st.number_input("Current Score", min_value=0, max_value=target, value=120)
+    selected_stadium = st.selectbox("Predict at Venue", stadiums)
+
+col6, col7, col8, col9 = st.columns(4)
 with col6:
-    overs = st.number_input("Overs Completed", min_value=0.0, max_value=20.0, value=15.0, step=0.1)
+    target = st.number_input("Target Score", min_value=0, max_value=300, value=180)
 with col7:
+    score = st.number_input("Current Score", min_value=0, max_value=target, value=120)
+with col8:
+    overs = st.number_input("Overs Completed", min_value=0.0, max_value=20.0, value=15.0, step=0.1)
+with col9:
     wickets = st.number_input("Wickets Fallen", min_value=0, max_value=10, value=4)
 
-# 4. Prediction Logic
 if st.button("Predict Win Probability"):
     if batting_team == bowling_team:
         st.error("Batting and Bowling teams must be different!")
     else:
-        # Calculate derived metrics from the user's input
+        
         runs_left = target - score
         balls_left = 120 - int(overs * 6)
         wickets_left = 10 - wickets
         crr = (score * 6) / (int(overs * 6)) if overs > 0 else 0
         rrr = (runs_left * 6) / balls_left if balls_left > 0 else 0
         
-        # Format input exactly as the model expects it
         input_df = pd.DataFrame({
             'batting_team': [batting_team], 'bowling_team': [bowling_team], 'venue': [selected_stadium], 
             'runs_left': [runs_left], 'balls_left': [balls_left], 'wickets_left': [wickets_left], 
             'target': [target], 'crr': [crr], 'rrr': [rrr]
         })
         
-        # Get prediction probabilities
         result = pipe.predict_proba(input_df)
-        loss_prob = result[0][0]
-        win_prob = result[0][1]
+        win_prob = result[0][1] * 100
         
-        # Display Results
-        st.markdown(f"### 🟢 **{batting_team}**: {round(win_prob * 100)}%")
-        st.markdown(f"### 🔴 **{bowling_team}**: {round(loss_prob * 100)}%")
+        st.subheader("Match Win Probability")
+        
+        fig3 = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = win_prob,
+            title = {'text': f"{batting_team} Win %", 'font': {'size': 26, 'color': '#E2E8F0'}}, # Increased title size
+            number = {'font': {'color': '#E2E8F0'}}, 
+            gauge = {
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#334155"},
+                'bar': {'color': "rgba(0,0,0,0)"}, 
+                'bgcolor': "rgba(0,0,0,0)", 
+                'borderwidth': 0, 
+                'steps': [
+                    {'range': [0, 40], 'color': "#EF4444"},     # Crimson Red
+                    {'range': [40, 60], 'color': "#F59E0B"},    # Amber Orange
+                    {'range': [60, 100], 'color': "#10B981"}    # Emerald Green
+                ],
+                'threshold': {
+                    'line': {'color': "#FFFFFF", 'width': 4}, 
+                    'thickness': 0.75,
+                    'value': win_prob
+                }
+            }
+        ))
+        
+        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"})
+        st.plotly_chart(fig3, use_container_width=True)
+        
+        st.markdown(
+            f"""
+            <div style="background-color: #1E293B; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #334155;">
+                <h4 style="margin: 0; color: #94A3B8; font-weight: normal; font-size: 20px;">
+                    <strong style="color: #E2E8F0;">{bowling_team}</strong> Win Probability: 
+                    <span style="color: #38BDF8; font-weight: bold;">{round(100 - win_prob, 1)}%</span>
+                </h4>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
