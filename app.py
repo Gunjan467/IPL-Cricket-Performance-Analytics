@@ -5,12 +5,14 @@ import plotly.graph_objects as go
 import pickle
 import numpy as np
 
+# --- 1. Setup the Web Page ---
 st.set_page_config(page_title="IPL Analytics Dashboard", layout="wide")
 st.title("🏏 IPL Cricket Performance Analytics")
 st.write("Welcome to the interactive IPL match analysis dashboard.")
 
 THEME_COLORS = ['#38BDF8', '#818CF8', '#34D399', '#FBBF24'] 
 
+# --- 2. Load and Clean Data ---
 @st.cache_data
 def load_and_clean_data():
     df = pd.read_csv('data/data.csv')
@@ -34,6 +36,7 @@ match_df = load_and_clean_data()
 teams = sorted(match_df['team1'].dropna().unique())
 stadiums = sorted(match_df['venue'].dropna().unique())
 
+# --- 3. Build the Dashboard UI - Venue Analysis ---
 st.header("🏟️ Venue Analysis")
 
 selected_venue = st.selectbox("Select a Stadium to Analyze", stadiums, index=stadiums.index('Wankhede Stadium') if 'Wankhede Stadium' in stadiums else 0)
@@ -64,6 +67,7 @@ if len(venue_df) > 0:
 else:
     st.warning("Not enough data to calculate win ratios for this venue.")
 
+# --- 4. Head-to-Head Matchup ---
 st.markdown("---") 
 st.header("⚔️ Head-to-Head Matchup")
 
@@ -92,18 +96,72 @@ else:
                       color='Team', 
                       title=f"Historic Win Record: {team1} vs {team2}",
                       text='Wins',
-                      color_discrete_sequence=['#8B5CF6', '#D97706'])
+                      color_discrete_sequence=['#8B5CF6', '#D97706']) # Royal Purple & Copper
         
         fig2.update_traces(textfont_size=22, textfont_color='white')              
         fig2.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15})
-        
         fig2.update_xaxes(showgrid=False, tickfont=dict(size=18))
         fig2.update_yaxes(showgrid=True, gridcolor='#334155')
-        
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("These two teams have never played against each other in the dataset.")
 
+# --- NEW: 5. Team Dominance Matrix ---
+st.markdown("---")
+st.header("🎯 Team Dominance by Stadium")
+st.write("Analyze a specific team's win percentage across all venues where they've played at least 3 matches.")
+
+focus_team = st.selectbox("Select a Team to Analyze", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0)
+
+# Filter matches where the selected team played
+team_matches = match_df[(match_df['team1'] == focus_team) | (match_df['team2'] == focus_team)]
+
+if len(team_matches) > 0:
+    # Calculate matches played at each venue by this team
+    venue_counts = team_matches['venue'].value_counts().reset_index()
+    venue_counts.columns = ['Venue', 'Matches Played']
+    
+    # Calculate matches won at each venue by this team
+    team_wins = team_matches[team_matches['winner'] == focus_team]['venue'].value_counts().reset_index()
+    team_wins.columns = ['Venue', 'Wins']
+    
+    # Merge and calculate win percentage
+    dominance_df = pd.merge(venue_counts, team_wins, on='Venue', how='left').fillna(0)
+    dominance_df['Win Percentage'] = (dominance_df['Wins'] / dominance_df['Matches Played']) * 100
+    dominance_df['Win Percentage'] = dominance_df['Win Percentage'].round(1)
+    
+    # Filter out stadiums with too little data (e.g., less than 3 matches) to avoid skewed 100% stats
+    dominance_df = dominance_df[dominance_df['Matches Played'] >= 3].sort_values(by='Win Percentage', ascending=True)
+    
+    if len(dominance_df) > 0:
+       
+        fig_dom = px.bar(dominance_df, 
+                         x='Win Percentage', 
+                         y='Venue', 
+                         orientation='h',
+                         title=f"{focus_team} - Strongest to Weakest Stadiums",
+                         text='Win Percentage',
+                         hover_data=['Matches Played', 'Wins'],
+                         color='Win Percentage',
+                         color_continuous_scale=['#EF4444', '#FBBF24', '#10B981']) # Red to Yellow to Green
+        
+        fig_dom.update_traces(texttemplate='%{text}%', textposition='inside', textfont_size=14, textfont_color='white')
+        fig_dom.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+                              font={'color': "#E2E8F0", 'size': 14},
+                              coloraxis_showscale=False, # Hide the color scale bar for a cleaner look
+                              height=max(400, len(dominance_df) * 40)) # Dynamically adjust height based on venue count
+        
+        fig_dom.update_xaxes(showgrid=True, gridcolor='#334155', range=[0, 100], title="Win %")
+        fig_dom.update_yaxes(title="")
+        
+        st.plotly_chart(fig_dom, use_container_width=True)
+    else:
+        st.info("Not enough data to map dominance. The team needs to have played at least 3 matches at a venue.")
+else:
+    st.info("No match data available for this team.")
+
+
+# --- 6. Live Match Win Predictor ---
 st.markdown("---")
 st.header("🔮 Live Match Win Predictor")
 
@@ -113,6 +171,7 @@ except FileNotFoundError:
     st.error("Model file not found! Please ensure 'model.pkl' is in the same folder.")
     st.stop()
 
+# Layout for Team and Venue Selection
 col3, col4, col5 = st.columns(3)
 with col3:
     batting_team = st.selectbox("Batting Team (Chasing)", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0)
@@ -121,6 +180,7 @@ with col4:
 with col5:
     selected_stadium = st.selectbox("Predict at Venue", stadiums)
 
+# Layout for Live Match Situation Inputs
 col6, col7, col8, col9 = st.columns(4)
 with col6:
     target = st.number_input("Target Score", min_value=0, max_value=300, value=180)
@@ -135,7 +195,7 @@ if st.button("Predict Win Probability"):
     if batting_team == bowling_team:
         st.error("Batting and Bowling teams must be different!")
     else:
-        
+       
         runs_left = target - score
         balls_left = 120 - int(overs * 6)
         wickets_left = 10 - wickets
@@ -156,7 +216,7 @@ if st.button("Predict Win Probability"):
         fig3 = go.Figure(go.Indicator(
             mode = "gauge+number",
             value = win_prob,
-            title = {'text': f"{batting_team} Win %", 'font': {'size': 26, 'color': '#E2E8F0'}}, # Increased title size
+            title = {'text': f"{batting_team} Win %", 'font': {'size': 26, 'color': '#E2E8F0'}}, 
             number = {'font': {'color': '#E2E8F0'}}, 
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#334155"},
@@ -164,9 +224,9 @@ if st.button("Predict Win Probability"):
                 'bgcolor': "rgba(0,0,0,0)", 
                 'borderwidth': 0, 
                 'steps': [
-                    {'range': [0, 40], 'color': "#EF4444"},     # Crimson Red
-                    {'range': [40, 60], 'color': "#F59E0B"},    # Amber Orange
-                    {'range': [60, 100], 'color': "#10B981"}    # Emerald Green
+                    {'range': [0, 40], 'color': "#EF4444"},     
+                    {'range': [40, 60], 'color': "#F59E0B"},    
+                    {'range': [60, 100], 'color': "#10B981"}    
                 ],
                 'threshold': {
                     'line': {'color': "#FFFFFF", 'width': 4}, 
