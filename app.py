@@ -10,6 +10,7 @@ st.set_page_config(page_title="IPL Analytics Dashboard", layout="wide")
 st.title("🏏 IPL Cricket Performance Analytics")
 st.write("Welcome to the interactive IPL match analysis dashboard.")
 
+# --- High-Visibility Dashboard Theme Colors ---
 THEME_COLORS = ['#38BDF8', '#818CF8', '#34D399', '#FBBF24'] 
 
 # --- 2. Load and Clean Data ---
@@ -17,8 +18,15 @@ THEME_COLORS = ['#38BDF8', '#818CF8', '#34D399', '#FBBF24']
 def load_and_clean_data():
     df = pd.read_csv('data/data.csv')
     
+    # NEW: Load the ball-by-ball ML data for the progression chart
+    try:
+        ml_df = pd.read_csv('data/ml_data.csv')
+    except FileNotFoundError:
+        ml_df = pd.DataFrame() # Fallback if file isn't found
+    
     match_df = df.drop_duplicates(subset=['match_id']).copy()
     
+    # Standardize Team Names (Historically Accurate)
     team_mapping = {
         'Delhi Daredevils': 'Delhi Capitals',
         'Kings XI Punjab': 'Punjab Kings',
@@ -30,9 +38,16 @@ def load_and_clean_data():
     match_df['team2'] = match_df['team2'].replace(team_mapping)
     match_df['winner'] = match_df['winner'].replace(team_mapping)
     
-    return match_df
+    # Standardize ML data team names if it loaded successfully
+    if not ml_df.empty:
+        if 'batting_team' in ml_df.columns:
+            ml_df['batting_team'] = ml_df['batting_team'].replace(team_mapping)
+        if 'bowling_team' in ml_df.columns:
+            ml_df['bowling_team'] = ml_df['bowling_team'].replace(team_mapping)
+            
+    return match_df, ml_df
 
-match_df = load_and_clean_data()
+match_df, ml_df = load_and_clean_data()
 teams = sorted(match_df['team1'].dropna().unique())
 stadiums = sorted(match_df['venue'].dropna().unique())
 
@@ -96,7 +111,7 @@ else:
                       color='Team', 
                       title=f"Historic Win Record: {team1} vs {team2}",
                       text='Wins',
-                      color_discrete_sequence=['#8B5CF6', '#D97706']) # Royal Purple & Copper
+                      color_discrete_sequence=['#8B5CF6', '#D97706']) 
         
         fig2.update_traces(textfont_size=22, textfont_color='white')              
         fig2.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15})
@@ -106,7 +121,7 @@ else:
     else:
         st.info("These two teams have never played against each other in the dataset.")
 
-# --- NEW: 5. Team Dominance Matrix ---
+# --- 5. Team Dominance Matrix ---
 st.markdown("---")
 st.header("🎯 Team Dominance by Stadium")
 st.write("Analyze a specific team's win percentage across all venues where they've played at least 3 matches.")
@@ -130,11 +145,10 @@ if len(team_matches) > 0:
     dominance_df['Win Percentage'] = (dominance_df['Wins'] / dominance_df['Matches Played']) * 100
     dominance_df['Win Percentage'] = dominance_df['Win Percentage'].round(1)
     
-    # Filter out stadiums with too little data (e.g., less than 3 matches) to avoid skewed 100% stats
+    # Filter out stadiums with too little data
     dominance_df = dominance_df[dominance_df['Matches Played'] >= 3].sort_values(by='Win Percentage', ascending=True)
     
     if len(dominance_df) > 0:
-       
         fig_dom = px.bar(dominance_df, 
                          x='Win Percentage', 
                          y='Venue', 
@@ -143,13 +157,13 @@ if len(team_matches) > 0:
                          text='Win Percentage',
                          hover_data=['Matches Played', 'Wins'],
                          color='Win Percentage',
-                         color_continuous_scale=['#EF4444', '#FBBF24', '#10B981']) # Red to Yellow to Green
+                         color_continuous_scale=['#EF4444', '#FBBF24', '#10B981'])
         
         fig_dom.update_traces(texttemplate='%{text}%', textposition='inside', textfont_size=14, textfont_color='white')
         fig_dom.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
                               font={'color': "#E2E8F0", 'size': 14},
-                              coloraxis_showscale=False, # Hide the color scale bar for a cleaner look
-                              height=max(400, len(dominance_df) * 40)) # Dynamically adjust height based on venue count
+                              coloraxis_showscale=False,
+                              height=max(400, len(dominance_df) * 40)) 
         
         fig_dom.update_xaxes(showgrid=True, gridcolor='#334155', range=[0, 100], title="Win %")
         fig_dom.update_yaxes(title="")
@@ -161,7 +175,59 @@ else:
     st.info("No match data available for this team.")
 
 
-# --- 6. Live Match Win Predictor ---
+# --- NEW: 6. Historical Match Progression ---
+st.markdown("---")
+st.header("📈 Historical Match Progression")
+st.write("Select a specific match to see how the run chase progressed ball-by-ball.")
+
+if not ml_df.empty and 'match_id' in ml_df.columns:
+    # Get a list of unique match IDs
+    match_ids = sorted(ml_df['match_id'].unique())
+    
+    # Default to the first match if available
+    selected_match_id = st.selectbox("Select Match ID", match_ids)
+    
+# --- NEW: 6. Team Chase Pacing ---
+st.markdown("---")
+st.header("📈 Average Team Chase Pacing")
+st.write("Analyze how a specific team paces their run chase over 120 balls on average.")
+
+if not ml_df.empty:
+    # Get a list of teams available in the ML data
+    chasing_teams = sorted(ml_df['batting_team'].unique())
+    
+    # Let the user select a team to analyze
+    selected_chasing_team = st.selectbox("Select Chasing Team", chasing_teams)
+    
+    # Filter for the selected team
+    team_chase_data = ml_df[ml_df['batting_team'] == selected_chasing_team].copy()
+    
+    if not team_chase_data.empty:
+        # Reconstruct balls played
+        team_chase_data['balls_played'] = 120 - team_chase_data['balls_left']
+        # Reconstruct current score
+        team_chase_data['current_runs'] = team_chase_data['target'] - team_chase_data['runs_left']
+        
+        # Group by balls played and calculate the average runs scored at each ball
+        avg_progression = team_chase_data.groupby('balls_played')['current_runs'].mean().reset_index()
+        
+        # Create the line chart
+        fig_prog = px.line(avg_progression, x='balls_played', y='current_runs', 
+                           title=f"Average Run Progression: {selected_chasing_team}",
+                           labels={'balls_played': 'Balls Played', 'current_runs': 'Average Cumulative Runs'},
+                           line_shape='spline')
+                           
+        # Styling
+        fig_prog.update_traces(line=dict(color='#38BDF8', width=4))
+        fig_prog.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"})
+        fig_prog.update_xaxes(showgrid=True, gridcolor='#334155', range=[0, 120])
+        fig_prog.update_yaxes(showgrid=True, gridcolor='#334155')
+        
+        st.plotly_chart(fig_prog, use_container_width=True)
+else:
+    st.info("Ball-by-ball progression data (`ml_data.csv`) is unavailable.")
+
+# --- 7. Live Match Win Predictor ---
 st.markdown("---")
 st.header("🔮 Live Match Win Predictor")
 
@@ -195,7 +261,7 @@ if st.button("Predict Win Probability"):
     if batting_team == bowling_team:
         st.error("Batting and Bowling teams must be different!")
     else:
-       
+        # Math calculations
         runs_left = target - score
         balls_left = 120 - int(overs * 6)
         wickets_left = 10 - wickets
