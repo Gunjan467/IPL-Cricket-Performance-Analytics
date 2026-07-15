@@ -47,7 +47,7 @@ match_df, ml_df = load_and_clean_data()
 teams = sorted(match_df['team1'].dropna().unique())
 stadiums = sorted(match_df['venue'].dropna().unique())
 
-# --- NEW: UI LAYOUT WITH TABS ---
+# --- UI LAYOUT WITH TABS ---
 tab1, tab2, tab3 = st.tabs(["🏟️ Venue Insights", "⚔️ Team Analytics", "🔮 Live Predictor"])
 
 # ==========================================
@@ -59,11 +59,10 @@ with tab1:
 
     venue_df = match_df[match_df['venue'] == selected_venue]
     
-    # Use columns within the tab for better layout
     v_col1, v_col2 = st.columns([1, 2])
     
     with v_col1:
-        st.write("") # Spacing
+        st.write("") 
         st.write(f"**Total Matches:** {len(venue_df)}")
         if len(venue_df) > 0:
             batting_first_wins = len(venue_df[venue_df['result'] == 'runs'])
@@ -206,7 +205,7 @@ with tab3:
                 result = pipe.predict_proba(input_df)
                 win_prob = result[0][1] * 100
                 
-                # Use columns to center the gauge
+                # --- Gauge Chart ---
                 g_col1, g_col2, g_col3 = st.columns([1, 2, 1])
                 with g_col2:
                     fig3 = go.Figure(go.Indicator(
@@ -223,6 +222,30 @@ with tab3:
                     fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, margin=dict(t=40, b=10))
                     st.plotly_chart(fig3, use_container_width=True)
                 
+                # --- NEW: Match Pressure Analysis ---
+                st.markdown("---")
+                st.subheader("📊 Match Pressure Analysis")
+                
+                rates_df = pd.DataFrame({
+                    'Metric': ['Current Run Rate (CRR)', 'Required Run Rate (RRR)'],
+                    'Rate': [crr, rrr]
+                })
+                
+                # Dynamic coloring: If RRR is dangerously higher than CRR, it turns red
+                rrr_color = '#EF4444' if rrr > crr + 1.5 else ('#F59E0B' if rrr > crr else '#10B981')
+                crr_color = '#10B981' if crr >= rrr else '#3B82F6'
+                
+                fig4 = px.bar(rates_df, x='Rate', y='Metric', orientation='h', color='Metric',
+                              color_discrete_sequence=[crr_color, rrr_color], text='Rate')
+                
+                fig4.update_traces(texttemplate='%{text:.2f}', textposition='outside', textfont_color='white')
+                fig4.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+                                   font={'color': "#E2E8F0"}, height=200, margin=dict(l=10, r=40, t=10, b=10))
+                fig4.update_xaxes(showgrid=True, gridcolor='#334155', title="Runs Per Over", range=[0, max(15, crr + 2, rrr + 2)])
+                fig4.update_yaxes(title="")
+                
+                st.plotly_chart(fig4, use_container_width=True)
+
                 st.markdown(
                     f"""
                     <div style="background-color: #1E293B; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #334155;">
