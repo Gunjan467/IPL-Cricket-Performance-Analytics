@@ -10,9 +10,10 @@ st.set_page_config(page_title="IPL Analytics Dashboard", layout="wide", initial_
 st.title("🏏 IPL Cricket Performance Analytics")
 st.write("Welcome to the interactive IPL match analysis dashboard.")
 
+# --- Professional Dashboard Theme Colors ---
 THEME_COLORS = ['#4F46E5', '#06B6D4', '#10B981', '#3B82F6'] 
 
-# --- 2. Load and Clean Data ---
+# --- 2. Advanced Caching: Load Data & Model ---
 @st.cache_data
 def load_and_clean_data():
     df = pd.read_csv('data/data.csv')
@@ -43,7 +44,18 @@ def load_and_clean_data():
             
     return match_df, ml_df
 
+# NEW: Cache the ML model in RAM so it doesn't reload from disk on every click!
+@st.cache_resource
+def load_ml_model():
+    try:
+        return pickle.load(open('model.pkl', 'rb'))
+    except FileNotFoundError:
+        return None
+
+# Load everything into memory once
 match_df, ml_df = load_and_clean_data()
+pipe = load_ml_model()
+
 teams = sorted(match_df['team1'].dropna().unique())
 stadiums = sorted(match_df['venue'].dropna().unique())
 
@@ -75,8 +87,8 @@ with tab1:
             chart_data = pd.DataFrame({'Outcome': ['Batting First', 'Chasing'], 'Wins': [batting_first_wins, chasing_wins]})
             fig = px.pie(chart_data, values='Wins', names='Outcome', color='Outcome',
                          color_discrete_map={'Batting First':'#4F46E5', 'Chasing':'#06B6D4'}, hole=0.4) 
-            fig.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#111827', width=2)))
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
+            fig.update_traces(textposition='inside', textinfo='percent+label', textfont_size=16, textfont_color='white', marker=dict(line=dict(color='#111827', width=2)))
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15}, showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.warning("Not enough data for this venue.")
@@ -129,9 +141,9 @@ with tab2:
             wins = h2h_df['winner'].value_counts().reset_index()
             wins.columns = ['Team', 'Wins']
             fig2 = px.bar(wins, x='Team', y='Wins', color='Team', text='Wins', color_discrete_sequence=['#8B5CF6', '#D97706'])
-            fig2.update_traces(textfont_size=20, textfont_color='white')              
-            fig2.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, margin=dict(t=30))
-            fig2.update_xaxes(showgrid=False, title="")
+            fig2.update_traces(textfont_size=22, textfont_color='white')              
+            fig2.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15}, margin=dict(t=30))
+            fig2.update_xaxes(showgrid=False, title="", tickfont=dict(size=18))
             fig2.update_yaxes(showgrid=True, gridcolor='#334155', title="Total Wins")
             st.plotly_chart(fig2, use_container_width=True)
         else:
@@ -163,9 +175,10 @@ with tab2:
 # ==========================================
 with tab3:
     st.header("Live Match Win Predictor")
-    try:
-        pipe = pickle.load(open('model.pkl', 'rb'))
-        
+    
+    if pipe is None:
+        st.error("Model file 'model.pkl' not found.")
+    else:
         p_col1, p_col2, p_col3 = st.columns(3)
         with p_col1:
             batting_team = st.selectbox("Batting (Chasing)", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0)
@@ -210,7 +223,7 @@ with tab3:
                 with g_col2:
                     fig3 = go.Figure(go.Indicator(
                         mode = "gauge+number", value = win_prob,
-                        title = {'text': f"{batting_team} Win %", 'font': {'size': 22, 'color': '#E2E8F0'}},
+                        title = {'text': f"{batting_team} Win %", 'font': {'size': 26, 'color': '#E2E8F0'}},
                         number = {'font': {'color': '#E2E8F0'}}, 
                         gauge = {
                             'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#334155"},
@@ -222,7 +235,7 @@ with tab3:
                     fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, margin=dict(t=40, b=10))
                     st.plotly_chart(fig3, use_container_width=True)
                 
-                # --- NEW: Match Pressure Analysis ---
+                # --- Match Pressure Analysis ---
                 st.markdown("---")
                 st.subheader("📊 Match Pressure Analysis")
                 
@@ -231,7 +244,6 @@ with tab3:
                     'Rate': [crr, rrr]
                 })
                 
-                # Dynamic coloring: If RRR is dangerously higher than CRR, it turns red
                 rrr_color = '#EF4444' if rrr > crr + 1.5 else ('#F59E0B' if rrr > crr else '#10B981')
                 crr_color = '#10B981' if crr >= rrr else '#3B82F6'
                 
@@ -248,8 +260,8 @@ with tab3:
 
                 st.markdown(
                     f"""
-                    <div style="background-color: #1E293B; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #334155;">
-                        <h4 style="margin: 0; color: #94A3B8; font-weight: normal;">
+                    <div style="background-color: #1E293B; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #334155; margin-bottom: 20px;">
+                        <h4 style="margin: 0; color: #94A3B8; font-weight: normal; font-size: 20px;">
                             <strong style="color: #E2E8F0;">{bowling_team}</strong> Win Probability: 
                             <span style="color: #38BDF8; font-weight: bold;">{round(100 - win_prob, 1)}%</span>
                         </h4>
@@ -257,5 +269,44 @@ with tab3:
                     """, 
                     unsafe_allow_html=True
                 )
-    except FileNotFoundError:
-        st.error("Model file 'model.pkl' not found.")
+
+                # --- Predictive Impact Analysis ---
+                if balls_left > 1 and wickets_left > 0 and runs_left > 0:
+                    st.markdown("---")
+                    st.subheader("⚡ Predictive Impact Analysis")
+                    st.write("Simulating the probability shift based on the immediate next delivery.")
+                    
+                    # Scenario 1: Next ball is a SIX
+                    s1_runs_left = max(0, runs_left - 6)
+                    s1_balls_left = balls_left - 1
+                    s1_crr = ((score + 6) * 6) / (120 - s1_balls_left)
+                    s1_rrr = (s1_runs_left * 6) / s1_balls_left if s1_balls_left > 0 else 0
+                    
+                    df_six = pd.DataFrame({
+                        'batting_team': [batting_team], 'bowling_team': [bowling_team], 'venue': [selected_stadium], 
+                        'runs_left': [s1_runs_left], 'balls_left': [s1_balls_left], 'wickets_left': [wickets_left], 
+                        'target': [target], 'crr': [s1_crr], 'rrr': [s1_rrr]
+                    })
+                    prob_six = pipe.predict_proba(df_six)[0][1] * 100
+                    delta_six = prob_six - win_prob
+                    
+                    # Scenario 2: Next ball is a WICKET
+                    s2_wickets_left = wickets_left - 1
+                    s2_balls_left = balls_left - 1
+                    s2_crr = (score * 6) / (120 - s2_balls_left)
+                    s2_rrr = (runs_left * 6) / s2_balls_left if s2_balls_left > 0 else 0
+                    
+                    df_wicket = pd.DataFrame({
+                        'batting_team': [batting_team], 'bowling_team': [bowling_team], 'venue': [selected_stadium], 
+                        'runs_left': [runs_left], 'balls_left': [s2_balls_left], 'wickets_left': [s2_wickets_left], 
+                        'target': [target], 'crr': [s2_crr], 'rrr': [s2_rrr]
+                    })
+                    prob_wicket = pipe.predict_proba(df_wicket)[0][1] * 100
+                    delta_wicket = prob_wicket - win_prob
+
+                    # Display Metrics
+                    sc_col1, sc_col2 = st.columns(2)
+                    with sc_col1:
+                        st.metric(label="If Next Ball is a SIX 🏏", value=f"{prob_six:.1f}%", delta=f"{delta_six:+.1f}%")
+                    with sc_col2:
+                        st.metric(label="If Next Ball is a WICKET ☝️", value=f"{prob_wicket:.1f}%", delta=f"{delta_wicket:+.1f}%")
