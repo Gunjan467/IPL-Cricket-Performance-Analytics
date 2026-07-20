@@ -150,25 +150,55 @@ with tab2:
             st.info("No historical matches found between these teams.")
 
     st.markdown("---")
-    st.header("Average Team Chase Pacing")
-    if not ml_df.empty:
-        chasing_teams = sorted(ml_df['batting_team'].unique())
-        selected_chasing_team = st.selectbox("Select Chasing Team", chasing_teams)
-        team_chase_data = ml_df[ml_df['batting_team'] == selected_chasing_team].copy()
+    
+    # --- NEW: Two Column Layout for Deeper Team Analytics ---
+    t_col3, t_col4 = st.columns(2)
+    
+    with t_col3:
+        st.subheader("🛡️ Strategic Win Profile")
+        st.write("Does this team win more by setting a target or chasing?")
+        profile_team = st.selectbox("Select Team to Analyze", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0, key="profile_team")
         
-        if not team_chase_data.empty:
-            team_chase_data['balls_played'] = 120 - team_chase_data['balls_left']
-            team_chase_data['current_runs'] = team_chase_data['target'] - team_chase_data['runs_left']
-            avg_progression = team_chase_data.groupby('balls_played')['current_runs'].mean().reset_index()
+        team_wins_df = match_df[match_df['winner'] == profile_team].copy()
+        if len(team_wins_df) > 0:
+            defending_wins = len(team_wins_df[team_wins_df['result'] == 'runs'])
+            chasing_wins = len(team_wins_df[team_wins_df['result'] == 'wickets'])
             
-            fig_prog = px.line(avg_progression, x='balls_played', y='current_runs', line_shape='spline')
-            fig_prog.update_traces(line=dict(color='#06B6D4', width=4))
-            fig_prog.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, margin=dict(t=20))
-            fig_prog.update_xaxes(showgrid=True, gridcolor='#334155', range=[0, 120], title="Balls Played")
-            fig_prog.update_yaxes(showgrid=True, gridcolor='#334155', title="Average Cumulative Runs")
-            st.plotly_chart(fig_prog, use_container_width=True)
-    else:
-        st.info("Progression data unavailable.")
+            profile_data = pd.DataFrame({
+                'Strategy': ['Defending (Batting 1st)', 'Chasing (Batting 2nd)'],
+                'Wins': [defending_wins, chasing_wins]
+            })
+            
+            fig_prof = px.pie(profile_data, values='Wins', names='Strategy', color='Strategy',
+                              color_discrete_map={'Defending (Batting 1st)': '#06B6D4', 'Chasing (Batting 2nd)': '#3B82F6'},
+                              hole=0.5)
+            fig_prof.update_traces(textposition='inside', textinfo='percent+label', textfont_size=15, textfont_color='white', marker=dict(line=dict(color='#1E293B', width=2)))
+            fig_prof.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, margin=dict(t=20, b=20, l=20, r=20))
+            st.plotly_chart(fig_prof, use_container_width=True)
+        else:
+            st.info(f"Not enough winning data for {profile_team}.")
+
+    with t_col4:
+        st.subheader("📈 Average Chase Pacing")
+        st.write("How does this team accumulate runs over 120 deliveries?")
+        if not ml_df.empty:
+            chasing_teams = sorted(ml_df['batting_team'].unique())
+            selected_chasing_team = st.selectbox("Select Chasing Team", chasing_teams, key="chasing_team")
+            team_chase_data = ml_df[ml_df['batting_team'] == selected_chasing_team].copy()
+            
+            if not team_chase_data.empty:
+                team_chase_data['balls_played'] = 120 - team_chase_data['balls_left']
+                team_chase_data['current_runs'] = team_chase_data['target'] - team_chase_data['runs_left']
+                avg_progression = team_chase_data.groupby('balls_played')['current_runs'].mean().reset_index()
+                
+                fig_prog = px.line(avg_progression, x='balls_played', y='current_runs', line_shape='spline')
+                fig_prog.update_traces(line=dict(color='#10B981', width=4))
+                fig_prog.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, margin=dict(t=20))
+                fig_prog.update_xaxes(showgrid=True, gridcolor='#334155', range=[0, 120], title="Balls Played")
+                fig_prog.update_yaxes(showgrid=True, gridcolor='#334155', title="Average Cumulative Runs")
+                st.plotly_chart(fig_prog, use_container_width=True)
+        else:
+            st.info("Progression data unavailable.")
 
 # ==========================================
 # TAB 3: LIVE PREDICTOR
