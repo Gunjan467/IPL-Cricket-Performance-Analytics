@@ -124,7 +124,7 @@ with tab1:
 # TAB 2: TEAM ANALYTICS
 # ==========================================
 with tab2:
-    st.header("Head-to-Head Matchup")
+    st.header("⚔️ Head-to-Head Matchup & Team DNA")
     t_col1, t_col2 = st.columns(2)
     with t_col1:
         team1 = st.selectbox("Team 1", teams, index=teams.index('Chennai Super Kings') if 'Chennai Super Kings' in teams else 0)
@@ -137,17 +137,60 @@ with tab2:
         mask = ((match_df['team1'] == team1) & (match_df['team2'] == team2)) | ((match_df['team1'] == team2) & (match_df['team2'] == team1))
         h2h_df = match_df[mask]
         
-        if len(h2h_df) > 0:
-            wins = h2h_df['winner'].value_counts().reset_index()
-            wins.columns = ['Team', 'Wins']
-            fig2 = px.bar(wins, x='Team', y='Wins', color='Team', text='Wins', color_discrete_sequence=['#8B5CF6', '#D97706'])
-            fig2.update_traces(textfont_size=22, textfont_color='white')              
-            fig2.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15}, margin=dict(t=30))
-            fig2.update_xaxes(showgrid=False, title="", tickfont=dict(size=18))
-            fig2.update_yaxes(showgrid=True, gridcolor='#334155', title="Total Wins")
-            st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info("No historical matches found between these teams.")
+        # --- NEW: Split layout for Bar Chart and Radar Chart ---
+        h2h_col1, h2h_col2 = st.columns([1, 1])
+        
+        with h2h_col1:
+            st.write(f"**Total Matches Played between them:** {len(h2h_df)}")
+            if len(h2h_df) > 0:
+                wins = h2h_df['winner'].value_counts().reset_index()
+                wins.columns = ['Team', 'Wins']
+                fig2 = px.bar(wins, x='Team', y='Wins', color='Team', title=f"Historic Win Record", text='Wins', color_discrete_sequence=['#8B5CF6', '#D97706'])
+                fig2.update_traces(textfont_size=22, textfont_color='white')              
+                fig2.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0", 'size': 15}, margin=dict(t=40))
+                fig2.update_xaxes(showgrid=False, title="", tickfont=dict(size=18))
+                fig2.update_yaxes(showgrid=True, gridcolor='#334155', title="Total Wins")
+                st.plotly_chart(fig2, use_container_width=True)
+            else:
+                st.info("No historical matches found between these teams.")
+                
+        with h2h_col2:
+            st.write("**Team DNA Comparison (Overall Stats)**")
+            if len(h2h_df) > 0:
+                # Helper function to calculate Team DNA metrics
+                def get_dna(team):
+                    t_matches = match_df[(match_df['team1'] == team) | (match_df['team2'] == team)]
+                    t_wins = t_matches[t_matches['winner'] == team]
+                    
+                    overall_win_pct = (len(t_wins) / len(t_matches)) * 100 if len(t_matches) > 0 else 0
+                    h2h_win_pct = (len(h2h_df[h2h_df['winner'] == team]) / len(h2h_df)) * 100
+                    def_share = (len(t_wins[t_wins['result'] == 'runs']) / len(t_wins)) * 100 if len(t_wins) > 0 else 0
+                    chase_share = (len(t_wins[t_wins['result'] == 'wickets']) / len(t_wins)) * 100 if len(t_wins) > 0 else 0
+                    
+                    return [overall_win_pct, h2h_win_pct, def_share, chase_share]
+
+                dna1 = get_dna(team1)
+                dna2 = get_dna(team2)
+                categories = ['Overall Win %', 'H2H Dominance %', 'Defending Dependency %', 'Chasing Dependency %']
+                
+                # Build the Spider/Radar Chart
+                fig_radar = go.Figure()
+                fig_radar.add_trace(go.Scatterpolar(r=dna1, theta=categories, fill='toself', name=team1, line_color='#8B5CF6', fillcolor='rgba(139, 92, 246, 0.4)'))
+                fig_radar.add_trace(go.Scatterpolar(r=dna2, theta=categories, fill='toself', name=team2, line_color='#D97706', fillcolor='rgba(217, 119, 6, 0.4)'))
+                
+                fig_radar.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True, range=[0, 100], gridcolor='#334155', tickfont=dict(color='#94A3B8')), 
+                        angularaxis=dict(gridcolor='#334155'),
+                        bgcolor="rgba(0,0,0,0)"
+                    ),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font={'color': "#E2E8F0"},
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                    margin=dict(t=30, b=20, l=40, r=40)
+                )
+                st.plotly_chart(fig_radar, use_container_width=True)
 
     st.markdown("---")
     
