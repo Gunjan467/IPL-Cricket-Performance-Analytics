@@ -3,15 +3,52 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import pickle
-import numpy as np
 
-# --- 1. Setup the Web Page ---
+# --- 1. Setup the Web Page & Custom CSS ---
 st.set_page_config(page_title="IPL Analytics Dashboard", layout="wide", initial_sidebar_state="collapsed")
+
+# NEW: Inject Custom CSS to hide Streamlit branding and add premium styling
+st.markdown("""
+<style>
+    /* Hide Streamlit Branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Premium Tab Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #0E1117;
+        padding: 10px 10px 0px 10px;
+        border-radius: 8px 8px 0px 0px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        background-color: #1E293B;
+        border-radius: 8px 8px 0px 0px;
+        padding: 10px 20px;
+        color: #94A3B8;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(139, 92, 246, 0.15) !important;
+        color: #A855F7 !important;
+        border-bottom: 3px solid #A855F7 !important;
+    }
+    
+    /* Metric Hover Animation */
+    [data-testid="stMetricValue"] {
+        transition: transform 0.2s ease-in-out, color 0.2s ease-in-out;
+    }
+    [data-testid="stMetricValue"]:hover {
+        transform: scale(1.08);
+        color: #A855F7;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🏏 IPL Cricket Performance Analytics")
 st.write("Welcome to the interactive IPL match analysis dashboard.")
-
-# --- Professional Dashboard Theme Colors ---
-THEME_COLORS = ['#4F46E5', '#06B6D4', '#10B981', '#3B82F6'] 
 
 # --- 2. Advanced Caching: Load Data & Model ---
 @st.cache_data
@@ -44,7 +81,6 @@ def load_and_clean_data():
             
     return match_df, ml_df
 
-# NEW: Cache the ML model in RAM so it doesn't reload from disk on every click!
 @st.cache_resource
 def load_ml_model():
     try:
@@ -137,7 +173,6 @@ with tab2:
         mask = ((match_df['team1'] == team1) & (match_df['team2'] == team2)) | ((match_df['team1'] == team2) & (match_df['team2'] == team1))
         h2h_df = match_df[mask]
         
-        # --- NEW: Split layout for Bar Chart and Radar Chart ---
         h2h_col1, h2h_col2 = st.columns([1, 1])
         
         with h2h_col1:
@@ -157,23 +192,19 @@ with tab2:
         with h2h_col2:
             st.write("**Team DNA Comparison (Overall Stats)**")
             if len(h2h_df) > 0:
-                # Helper function to calculate Team DNA metrics
                 def get_dna(team):
                     t_matches = match_df[(match_df['team1'] == team) | (match_df['team2'] == team)]
                     t_wins = t_matches[t_matches['winner'] == team]
-                    
                     overall_win_pct = (len(t_wins) / len(t_matches)) * 100 if len(t_matches) > 0 else 0
                     h2h_win_pct = (len(h2h_df[h2h_df['winner'] == team]) / len(h2h_df)) * 100
                     def_share = (len(t_wins[t_wins['result'] == 'runs']) / len(t_wins)) * 100 if len(t_wins) > 0 else 0
                     chase_share = (len(t_wins[t_wins['result'] == 'wickets']) / len(t_wins)) * 100 if len(t_wins) > 0 else 0
-                    
                     return [overall_win_pct, h2h_win_pct, def_share, chase_share]
 
                 dna1 = get_dna(team1)
                 dna2 = get_dna(team2)
                 categories = ['Overall Win %', 'H2H Dominance %', 'Defending Dependency %', 'Chasing Dependency %']
                 
-                # Build the Spider/Radar Chart
                 fig_radar = go.Figure()
                 fig_radar.add_trace(go.Scatterpolar(r=dna1, theta=categories, fill='toself', name=team1, line_color='#8B5CF6', fillcolor='rgba(139, 92, 246, 0.4)'))
                 fig_radar.add_trace(go.Scatterpolar(r=dna2, theta=categories, fill='toself', name=team2, line_color='#D97706', fillcolor='rgba(217, 119, 6, 0.4)'))
@@ -181,20 +212,14 @@ with tab2:
                 fig_radar.update_layout(
                     polar=dict(
                         radialaxis=dict(visible=True, range=[0, 100], gridcolor='#334155', tickfont=dict(color='#94A3B8')), 
-                        angularaxis=dict(gridcolor='#334155'),
-                        bgcolor="rgba(0,0,0,0)"
+                        angularaxis=dict(gridcolor='#334155'), bgcolor="rgba(0,0,0,0)"
                     ),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    font={'color': "#E2E8F0"},
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
-                    margin=dict(t=30, b=20, l=40, r=40)
+                    paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5), margin=dict(t=30, b=20, l=40, r=40)
                 )
                 st.plotly_chart(fig_radar, use_container_width=True)
 
     st.markdown("---")
-    
-    # --- NEW: Two Column Layout for Deeper Team Analytics ---
     t_col3, t_col4 = st.columns(2)
     
     with t_col3:
@@ -207,14 +232,9 @@ with tab2:
             defending_wins = len(team_wins_df[team_wins_df['result'] == 'runs'])
             chasing_wins = len(team_wins_df[team_wins_df['result'] == 'wickets'])
             
-            profile_data = pd.DataFrame({
-                'Strategy': ['Defending (Batting 1st)', 'Chasing (Batting 2nd)'],
-                'Wins': [defending_wins, chasing_wins]
-            })
-            
+            profile_data = pd.DataFrame({'Strategy': ['Defending (Batting 1st)', 'Chasing (Batting 2nd)'], 'Wins': [defending_wins, chasing_wins]})
             fig_prof = px.pie(profile_data, values='Wins', names='Strategy', color='Strategy',
-                              color_discrete_map={'Defending (Batting 1st)': '#06B6D4', 'Chasing (Batting 2nd)': '#3B82F6'},
-                              hole=0.5)
+                              color_discrete_map={'Defending (Batting 1st)': '#06B6D4', 'Chasing (Batting 2nd)': '#3B82F6'}, hole=0.5)
             fig_prof.update_traces(textposition='inside', textinfo='percent+label', textfont_size=15, textfont_color='white', marker=dict(line=dict(color='#1E293B', width=2)))
             fig_prof.update_layout(showlegend=False, paper_bgcolor="rgba(0,0,0,0)", font={'color': "#E2E8F0"}, margin=dict(t=20, b=20, l=20, r=20))
             st.plotly_chart(fig_prof, use_container_width=True)
@@ -224,7 +244,7 @@ with tab2:
     with t_col4:
         st.subheader("📈 Average Chase Pacing")
         st.write("How does this team accumulate runs over 120 deliveries?")
-        if not ml_df.empty:
+        if not ml_df.empty and 'batting_team' in ml_df.columns:
             chasing_teams = sorted(ml_df['batting_team'].unique())
             selected_chasing_team = st.selectbox("Select Chasing Team", chasing_teams, key="chasing_team")
             team_chase_data = ml_df[ml_df['batting_team'] == selected_chasing_team].copy()
@@ -241,7 +261,7 @@ with tab2:
                 fig_prog.update_yaxes(showgrid=True, gridcolor='#334155', title="Average Cumulative Runs")
                 st.plotly_chart(fig_prog, use_container_width=True)
         else:
-            st.info("Progression data unavailable.")
+            st.info("Pacing data unavailable. Verify ml_data.csv format.")
 
 # ==========================================
 # TAB 3: LIVE PREDICTOR
@@ -346,7 +366,7 @@ with tab3:
                 # --- Predictive Impact Analysis ---
                 if balls_left > 1 and wickets_left > 0 and runs_left > 0:
                     st.markdown("---")
-                    st.subheader("⚡ Predictive Impact Analysis")
+                    st.subheader("⚡ Next-Delivery Impact Projections")
                     st.write("Simulating the probability shift based on the immediate next delivery.")
                     
                     # Scenario 1: Next ball is a SIX
